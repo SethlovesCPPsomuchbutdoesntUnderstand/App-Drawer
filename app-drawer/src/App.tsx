@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Analytics from "./Analytics";
+import VoiceCommand from "./VoiceCommand";
 
 interface AppItem {
   name: string;
@@ -40,6 +41,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [movingApp, setMovingApp] = useState<{ name: string; to: string } | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
   const activeSessionRef = useRef<{ id: number; app: AppItem } | null>(null);
 
   const showToast = (msg: string, ok = true) => {
@@ -83,10 +85,16 @@ export default function App() {
       loadApps();
     });
 
+    // Open voice command from tray or Ctrl+Shift+V
+    const unlistenVoice = listen("open-voice", () => {
+      setShowVoice(true);
+    });
+
     return () => {
       unlisten.then((f) => f());
       unlistenAnalytics.then((f) => f());
       unlistenAppsReady.then((f) => f());
+      unlistenVoice.then((f) => f());
     };
   }, []);
 
@@ -103,6 +111,12 @@ export default function App() {
       if (e.key === "Enter" && selectedAppRef.current) {
         const app = appsRef.current.find(a => a.app_id === selectedAppRef.current);
         if (app) handleAppDoubleClick(app);
+      }
+
+      // Ctrl+K or Ctrl+Shift+V — open voice command
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowVoice(true);
       }
 
       // Ctrl+F — focus search
@@ -336,6 +350,26 @@ export default function App() {
       {/* ── Analytics Panel ── */}
       {showAnalytics && <Analytics onClose={() => setShowAnalytics(false)} />}
 
+      {/* ── Voice Command ── */}
+      {showVoice && (
+        <VoiceCommand
+          apps={apps}
+          onClose={() => setShowVoice(false)}
+          onOpenApp={(app: AppItem) => {
+            setShowVoice(false);
+            handleAppDoubleClick(app);
+          }}
+          onOpenCategory={(category: string) => {
+            setSelectedCategory(category);
+            setShowVoice(false);
+          }}
+          onOpenAnalytics={() => {
+            setShowVoice(false);
+            setShowAnalytics(true);
+          }}
+        />
+      )}
+
       {/* ── Loading Screen ── */}
       {isLoading && (
         <div style={{
@@ -474,6 +508,29 @@ export default function App() {
           }}
         >
           <span>📊</span> Analytics
+        </button>
+
+        {/* Voice Command */}
+        <button
+          onClick={() => setShowVoice(true)}
+          style={{
+            width: "100%",
+            padding: "12px 16px",
+            background: "rgba(0,0,0,0.06)",
+            color: "#2E3A4A",
+            border: "none",
+            borderRadius: 10,
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 500,
+            textAlign: "left",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 4,
+          }}
+        >
+          <span>🎙</span> Voice Command
         </button>
 
         {/* Search */}
