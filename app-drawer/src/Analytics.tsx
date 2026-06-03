@@ -35,8 +35,21 @@ interface SessionRow {
 
 const fmtMins = (secs: number) => {
   const m = Math.floor(secs / 60);
+  if (m === 0) return "0m";
   if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
+};
+
+// For bar chart tooltip — show full readable label
+const fmtBarTooltip = (secs: number) => {
+  const m = Math.floor(secs / 60);
+  if (m === 0) return "Less than a minute";
+  if (m < 60) return `${m} minutes`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h} hour${h > 1 ? "s" : ""}` : `${h}h ${rem}m`;
 };
 
 const fmtDate = (d: string) => {
@@ -142,7 +155,7 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
       acc[r.date] = (acc[r.date] ?? 0) + r.total_secs;
       return acc;
     }, {} as Record<string, number>)
-  ).map(([date, total_secs]) => ({ date: fmtDate(date), total_mins: Math.round(total_secs / 60) }));
+  ).map(([date, total_secs]) => ({ date: fmtDate(date), total_secs, total_mins: Math.round(total_secs / 60) }));
 
   // Donut — top 8 apps
   const donutData = appTotals.slice(0, 8).map(r => ({
@@ -360,10 +373,17 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
                 <BarChart data={dailyBarData} barSize={28}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" tick={{ fill: "#8A9BAD", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#8A9BAD", fontSize: 11 }} tickFormatter={v => `${v}m`} />
+                  <YAxis
+                    tick={{ fill: "#8A9BAD", fontSize: 11 }}
+                    tickFormatter={(v: number) => {
+                      const m = Math.round(v);
+                      if (m < 60) return `${m}m`;
+                      return `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ""}`;
+                    }}
+                  />
                   <Tooltip
                     contentStyle={{ background: "#1E2B38", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: unknown) => [`${Math.round(v as number)} min`, "Screen time"]}
+                    formatter={(v: unknown) => [fmtBarTooltip((v as number) * 60), "Screen time"]}
                   />
                   <Bar dataKey="total_mins" fill="#5FA8D3" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -471,7 +491,14 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
                     <LineChart data={sessionLineData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                       <XAxis dataKey="name" tick={{ fill: "#8A9BAD", fontSize: 10 }} />
-                      <YAxis tick={{ fill: "#8A9BAD", fontSize: 11 }} tickFormatter={v => `${v}m`} />
+                      <YAxis
+                    tick={{ fill: "#8A9BAD", fontSize: 11 }}
+                    tickFormatter={(v: number) => {
+                      const m = Math.round(v);
+                      if (m < 60) return `${m}m`;
+                      return `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ""}`;
+                    }}
+                  />
                       <Tooltip
                         contentStyle={{ background: "#1E2B38", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
                         formatter={(v: unknown) => [`${Math.round(v as number)} min`, "Duration"]}

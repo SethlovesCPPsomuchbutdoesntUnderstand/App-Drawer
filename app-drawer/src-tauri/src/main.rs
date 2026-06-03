@@ -372,7 +372,7 @@ fn main() {
             // Global shortcuts
             let h = app.handle().clone();
             app.global_shortcut()
-                .on_shortcut("CommandOrControl+Shift+A", move |_, _, event| {
+                .on_shortcut("Alt+F1", move |_, _, event| {
                     if event.state() == ShortcutState::Pressed {
                         if let Some(w) = h.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
@@ -388,7 +388,7 @@ fn main() {
             // Ctrl+Shift+V — open voice command from anywhere
             let h2 = app.handle().clone();
             app.global_shortcut()
-                .on_shortcut("CommandOrControl+Shift+V", move |_, _, event| {
+                .on_shortcut("Alt+F2", move |_, _, event| {
                     if event.state() == ShortcutState::Pressed {
                         if let Some(w) = h2.get_webview_window("main") {
                             let _ = w.show();
