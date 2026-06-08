@@ -32,6 +32,7 @@ impl Default for CategoryData {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ActiveSession {
     pub session_id: i64,
     pub app_id: String,

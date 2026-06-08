@@ -113,8 +113,8 @@ export default function App() {
         if (app) handleAppDoubleClick(app);
       }
 
-      // Ctrl+K or Ctrl+Shift+V — open voice command
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      // Ctrl+K or Alt+F2 — open voice command
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
         setShowVoice(true);
       }
@@ -215,25 +215,21 @@ export default function App() {
     });
   };
 
-  // Tell Rust to close the session whenever AppDrawer loses focus or hides
+  // Tell Rust to close the session when AppDrawer is hidden or closed
+  // Only use visibilitychange — blur fires too aggressively (e.g. opening sub-panels)
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState === "hidden") {
         await safeInvoke("log_app_close");
       }
     };
-    const handleBlur = async () => {
-      await safeInvoke("log_app_close");
-    };
     const handleBeforeUnload = () => {
       safeInvoke("log_app_close");
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("blur", handleBlur);
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("blur", handleBlur);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);

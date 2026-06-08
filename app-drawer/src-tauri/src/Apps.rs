@@ -227,17 +227,6 @@ pub fn fetch_app_list() -> Vec<(String, String)> {
         .collect()
 }
 
-pub fn get_or_load_icon(app_id: &str) -> Option<String> {
-    let p = icon_path(app_id);
-    if p.exists() {
-        return icon_path_to_b64(&p);
-    }
-    // Single-app fallback extraction
-    let items = vec![(app_id.to_string(), p.clone())];
-    batch_extract_icons(&items);
-    icon_path_to_b64(&p)
-}
-
 pub fn spawn_icon_fetch(
     missing: Vec<(String, PathBuf)>,
     data_arc: Arc<std::sync::Mutex<crate::state::CategoryData>>,

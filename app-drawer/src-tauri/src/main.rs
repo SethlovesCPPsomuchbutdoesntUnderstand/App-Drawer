@@ -220,6 +220,48 @@ fn get_long_sessions(days: i64) -> Result<Vec<SessionRow>, String> {
 }
 
 #[tauri::command]
+fn cleanup_analytics() -> Result<String, String> {
+    let conn = analytics::open_db().map_err(|e| e.to_string())?;
+    // Delete sessions that were never closed (still open after app restart)
+    let deleted_open: usize = conn
+        .execute("DELETE FROM app_sessions WHERE closed_at IS NULL", [])
+        .map_err(|e| e.to_string())?;
+    // Delete sessions with absurd durations (> 2hrs — clearly a bug)
+    let deleted_long: usize = conn
+        .execute("DELETE FROM app_sessions WHERE duration_secs > 7200", [])
+        .map_err(|e| e.to_string())?;
+    // Fix misnamed VS Code sessions (old name was "VS Code", now "Visual Studio Code")
+    conn.execute(
+        "UPDATE app_sessions SET app_name='Visual Studio Code' WHERE app_id='code.exe' OR app_name='VS Code'",
+        []
+    ).map_err(|e| e.to_string())?;
+    // Make sure Visual Studio sessions aren't mixed with VS Code
+    conn.execute(
+        "UPDATE app_sessions SET app_name='Visual Studio' WHERE app_id='devenv.exe'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Rebuild daily_summary from clean sessions
+    conn.execute("DELETE FROM daily_summary", [])
+        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO daily_summary (date, app_id, app_name, total_secs, open_count)
+         SELECT date(opened_at), app_id, app_name,
+                SUM(MIN(duration_secs, 7200)), COUNT(*)
+         FROM app_sessions
+         WHERE closed_at IS NOT NULL AND duration_secs > 0
+         GROUP BY date(opened_at), app_id",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "Cleaned {} unclosed + {} overlong sessions",
+        deleted_open, deleted_long
+    ))
+}
+
+#[tauri::command]
 fn debug_analytics() -> Result<serde_json::Value, String> {
     let conn = open_db().map_err(|e| e.to_string())?;
     let session_count: i64 = conn
@@ -320,7 +362,7 @@ fn main() {
                 .item(&quit_item)
                 .build()?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .tooltip("AppDrawer")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -401,9 +443,29 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    // Close any open session when window hides
+                    if let Some(state) = window.try_state::<AppState>() {
+                        let sess = { state.session.lock().unwrap().take() };
+                        if let Some(s) = sess {
+                            let _ = write_session_close(s.session_id, &s.app_id, &s.app_name);
+                        }
+                    }
+                }
+                tauri::WindowEvent::Focused(false) => {
+                    // Close session when window loses focus to another app
+                    if let Some(state) = window.try_state::<AppState>() {
+                        let sess = { state.session.lock().unwrap().clone() };
+                        if let Some(s) = sess {
+                            let _ = write_session_close(s.session_id, &s.app_id, &s.app_name);
+                            *state.session.lock().unwrap() = None;
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

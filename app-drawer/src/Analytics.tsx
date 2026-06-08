@@ -121,9 +121,27 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
   const [longSessions, setLongSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     fetchAll();
+  }, [range]);
+
+  // Poll Top Apps every 10 seconds for real-time updates
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const payload = await invoke<{
+          daily_totals: DailySummaryRow[];
+          app_totals: DailySummaryRow[];
+          hourly_usage: HourlyUsageRow[];
+          long_sessions: SessionRow[];
+        }>("get_analytics", { days: range });
+        setAppTotals(payload.app_totals ?? []);
+        setLastUpdated(new Date());
+      } catch {}
+    }, 10000);
+    return () => clearInterval(interval);
   }, [range]);
 
   const fetchAll = async () => {
@@ -141,6 +159,7 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
       setAppTotals(payload.app_totals ?? []);
       setHourlyUsage(payload.hourly_usage ?? []);
       setLongSessions(payload.long_sessions ?? []);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error("Analytics fetch error:", err);
     }
@@ -250,6 +269,22 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
               {d}d
             </button>
           ))}
+
+          <button
+            onClick={async () => {
+              const result = await invoke<string>("cleanup_analytics");
+              alert(result);
+              fetchAll();
+            }}
+            style={{
+              padding: "7px 16px", borderRadius: 8,
+              border: "1px solid rgba(252,92,101,0.4)",
+              background: "rgba(252,92,101,0.1)",
+              color: "#FC5C65", cursor: "pointer", fontSize: 13,
+            }}
+          >
+            🧹 Clean Bad Data
+          </button>
 
           <button
             onClick={async () => {
@@ -512,7 +547,27 @@ export default function Analytics({ onClose }: { onClose: () => void }) {
             )}
 
             {/* ── Top Apps Table ── */}
-            <SectionTitle>🏆 Top Apps</SectionTitle>
+            <SectionTitle>
+              🏆 Top Apps
+              <span style={{
+                marginLeft: "auto",
+                fontSize: 10,
+                color: "#8A9BAD",
+                fontWeight: 400,
+                textTransform: "none",
+                letterSpacing: 0,
+              }}>
+                <span style={{
+                  display: "inline-block",
+                  width: 6, height: 6,
+                  borderRadius: "50%",
+                  background: "#26C281",
+                  marginRight: 5,
+                  animation: "livepulse 2s ease-in-out infinite",
+                }} />
+                Live · {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+              </span>
+            </SectionTitle>
             <div style={{
               background: "rgba(255,255,255,0.03)",
               borderRadius: 14,

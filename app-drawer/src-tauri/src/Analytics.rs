@@ -232,7 +232,7 @@ pub fn exe_to_app_name(exe: &str) -> Option<&'static str> {
         "firefox.exe" => Some("Firefox"),
         "msedge.exe" => Some("Microsoft Edge"),
         "opera.exe" => Some("Opera"),
-        "code.exe" => Some("VS Code"),
+        "code.exe" => Some("Visual Studio Code"),
         "devenv.exe" => Some("Visual Studio"),
         "spotify.exe" => Some("Spotify"),
         "discord.exe" => Some("Discord"),
@@ -249,6 +249,22 @@ pub fn exe_to_app_name(exe: &str) -> Option<&'static str> {
         "notion.exe" => Some("Notion"),
         "vlc.exe" => Some("VLC"),
         "steam.exe" => Some("Steam"),
+        "claude.exe" => Some("Claude"),
+        "cursor.exe" => Some("Cursor"),
+        "wt.exe" => Some("Windows Terminal"),
+        "powershell.exe" => Some("PowerShell"),
+        "cmd.exe" => Some("Command Prompt"),
+        "taskmgr.exe" => Some("Task Manager"),
+        "mspaint.exe" => Some("Paint"),
+        "wordpad.exe" => Some("WordPad"),
+        "calc.exe" => Some("Calculator"),
+        "snippingtool.exe" => Some("Snipping Tool"),
+        "postman.exe" => Some("Postman"),
+        "insomnia.exe" => Some("Insomnia"),
+        "dbeaver.exe" => Some("DBeaver"),
+        "telegram.exe" => Some("Telegram"),
+        "whatsapp.exe" => Some("WhatsApp"),
+        "zoom.exe" => Some("Zoom"),
         _ => None,
     }
 }
@@ -262,9 +278,20 @@ pub fn start_background_tracker(bg_session: Arc<Mutex<Option<BgSession>>>) {
             let Some(exe) = get_foreground_exe() else {
                 continue;
             };
-            let Some(app_name) = exe_to_app_name(&exe) else {
-                continue;
-            };
+            // Use mapped name or fall back to exe name (capitalized) so ALL apps get tracked
+            let app_name_owned =
+                exe_to_app_name(&exe)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        // Convert "myapp.exe" -> "Myapp"
+                        let base = exe.trim_end_matches(".exe");
+                        let mut c = base.chars();
+                        match c.next() {
+                            None => base.to_string(),
+                            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                        }
+                    });
+            let app_name = app_name_owned.as_str();
             let mut lock = bg_session.lock().unwrap();
             match lock.as_ref() {
                 Some(s) if s.exe_name == exe => {}
@@ -352,17 +379,21 @@ pub struct AnalyticsPayload {
     pub long_sessions: Vec<SessionRow>,
 }
 
-const DUR: &str =
-    "COALESCE(duration_secs, CAST((julianday('now')-julianday(opened_at))*86400 AS INTEGER))";
-
 pub fn query_analytics(days: i64) -> Result<AnalyticsPayload, String> {
     let conn = open_db().map_err(|e| e.to_string())?;
     let arg = format!("-{} days", days);
 
+    let filter = "closed_at IS NOT NULL AND duration_secs IS NOT NULL AND duration_secs > 0";
+
     let daily_totals = {
         let sql = format!(
-            "SELECT date(opened_at),app_id,app_name,SUM({DUR}),COUNT(*) FROM app_sessions
-             WHERE date(opened_at)>=date('now',?1) GROUP BY date(opened_at),app_id ORDER BY date(opened_at)"
+            "SELECT date(opened_at), app_id, app_name,
+                    SUM(MIN(duration_secs, 7200)), COUNT(*)
+             FROM app_sessions
+             WHERE date(opened_at) >= date('now', ?1)
+               AND {filter}
+             GROUP BY date(opened_at), app_name
+             ORDER BY date(opened_at)"
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
@@ -383,8 +414,13 @@ pub fn query_analytics(days: i64) -> Result<AnalyticsPayload, String> {
 
     let app_totals = {
         let sql = format!(
-            "SELECT date(opened_at),app_id,app_name,SUM({DUR}),COUNT(*) FROM app_sessions
-             WHERE date(opened_at)>=date('now',?1) GROUP BY app_id ORDER BY SUM({DUR}) DESC"
+            "SELECT date(opened_at), app_id, app_name,
+                    SUM(MIN(duration_secs, 7200)), COUNT(*)
+             FROM app_sessions
+             WHERE date(opened_at) >= date('now', ?1)
+               AND {filter}
+             GROUP BY app_name
+             ORDER BY SUM(MIN(duration_secs, 7200)) DESC"
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
@@ -405,8 +441,13 @@ pub fn query_analytics(days: i64) -> Result<AnalyticsPayload, String> {
 
     let hourly_usage = {
         let sql = format!(
-            "SELECT CAST(strftime('%H',opened_at) AS INTEGER),SUM({DUR}) FROM app_sessions
-             WHERE opened_at>=datetime('now',?1) GROUP BY 1 ORDER BY 1"
+            "SELECT CAST(strftime('%H', opened_at) AS INTEGER),
+                    SUM(MIN(duration_secs, 7200))
+             FROM app_sessions
+             WHERE opened_at >= datetime('now', ?1)
+               AND {filter}
+             GROUP BY 1
+             ORDER BY 1"
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
@@ -424,8 +465,13 @@ pub fn query_analytics(days: i64) -> Result<AnalyticsPayload, String> {
 
     let long_sessions = {
         let sql = format!(
-            "SELECT id,app_id,app_name,category,opened_at,closed_at,{DUR} FROM app_sessions
-             WHERE opened_at>=datetime('now',?1) AND {DUR}>1200 ORDER BY opened_at DESC LIMIT 50"
+            "SELECT id, app_id, app_name, category, opened_at, closed_at, duration_secs
+             FROM app_sessions
+             WHERE opened_at >= datetime('now', ?1)
+               AND {filter}
+               AND duration_secs > 1200
+             ORDER BY duration_secs DESC
+             LIMIT 50"
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
